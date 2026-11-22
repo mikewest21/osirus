@@ -6,7 +6,7 @@
  */
 
 const BOARD_ROWS = 64;
-const GENES = ['momentum', 'reversion', 'fear', 'news', 'breakout', 'volume', 'factor', 'dca', 'spread', 'band', 'trend', 'calm', 'calendar'];
+const GENES = ['momentum', 'reversion', 'fear', 'news', 'breakout', 'volume', 'factor', 'dca', 'spread', 'band', 'trend', 'calm', 'calendar', 'scalp', 'grid'];
 const GENE_LORE = {
   momentum:  { epithet: 'the Swift',       emoji: '🔥', word: 'momentum' },
   reversion: { epithet: 'the Patient',     emoji: '🕯️', word: 'buying the dip' },
@@ -20,7 +20,9 @@ const GENE_LORE = {
   band:      { epithet: 'the Elastic',     emoji: '🫧', word: 'band snap-backs' },
   trend:     { epithet: 'Longstride',      emoji: '🐢', word: 'slow trend crossovers' },
   calm:      { epithet: 'the Even-Keeled', emoji: '⚖️', word: 'calm, low-volatility assets' },
-  calendar:  { epithet: 'Almanac-Wise',    emoji: '📅', word: 'the turn of the month' }
+  calendar:  { epithet: 'Almanac-Wise',    emoji: '📅', word: 'the turn of the month' },
+  scalp:     { epithet: 'Quickblade',      emoji: '🪙', word: 'quick scalps' },
+  grid:      { epithet: 'the Latticed',    emoji: '🧇', word: 'grid ladders' }
 };
 const FIRST_NAMES = ['Vyra', 'Kaelen', 'Sorrel', 'Maelis', 'Torvin', 'Ysolde', 'Branick', 'Elowen', 'Corvane', 'Isra',
   'Draven', 'Seraphine', 'Aldric', 'Nyxa', 'Rowan', 'Talia', 'Oberic', 'Liora', 'Garrow', 'Anwen'];
@@ -45,8 +47,8 @@ const FOUNDERS = {
   DANA:  { house: 'Adamant',      dna: dna_({ dca: 1 }, { buyThreshold: 0.1, sellThreshold: -1, positionSize: 0.3, stopLoss: 0 }) },
   BELLA: { house: 'Thunderspire', dna: dna_({ breakout: 1, volume: 0.3 }, { stopLoss: 0.1 }) },
   WES:   { house: 'Leviathan',    dna: dna_({ volume: 1, momentum: 0.3 }, { positionSize: 0.2, universe: 'crypto' }) },
-  GRID:  { house: 'Latticeholm',  dna: dna_({ reversion: 1, volume: 0.2 }, { positionSize: 0.1, maxPositions: 4, takeProfit: 0.025, stopLoss: 0.12 }) },
-  SCALP: { house: 'Quickmint',    dna: dna_({ momentum: 0.6, reversion: 0.4 }, { positionSize: 0.2, maxPositions: 3, takeProfit: 0.01, stopLoss: 0.01, universe: 'all' }) },
+  GRID:  { house: 'Latticeholm',  dna: dna_({ grid: 1, reversion: 0.2 }, { positionSize: 0.1, maxPositions: 4, takeProfit: 0.025, stopLoss: 0.12 }) },
+  SCALP: { house: 'Quickmint',    dna: dna_({ scalp: 1, momentum: 0.2 }, { positionSize: 0.2, maxPositions: 3, takeProfit: 0.01, stopLoss: 0.01, universe: 'all' }) },
   STACK: { house: 'Hoardwell',    dna: dna_({ dca: 0.7, reversion: 0.6 }, { positionSize: 0.3, maxPositions: 1, takeProfit: 0.06, stopLoss: 0, universe: 'crypto' }) },
   PAIR:  { house: 'Mirrormoor',   dna: dna_({ spread: 1, reversion: 0.3 }, { positionSize: 0.3, maxPositions: 2, stopLoss: 0.08 }) },
   BAND:  { house: 'Elastica',     dna: dna_({ band: 1, reversion: 0.3 }, { positionSize: 0.25, stopLoss: 0.08 }) },
@@ -177,8 +179,36 @@ function geneSignals_(a, c, fac, pool) {
     breakout: a.high20 && a.price > a.high20 && a.volRatio > 1.2 ? 1 : (a.low10 && a.price < a.low10 ? -1 : 0),
     volume: a.volRatio >= 1.8 && a.ret1 != null ? Math.sign(a.ret1) * clamp_((a.volRatio - 1) / 2) : 0,
     factor: fac[a.sym] != null ? clamp_(fac[a.sym] / 2) : 0,
-    dca: a.sym === 'BTC' || a.sym === 'SPY' ? 1 : 0
+    dca: a.sym === 'BTC' || a.sym === 'SPY' ? 1 : 0,
+    scalp: scalpSignal_(a, c),
+    grid: gridSignal_(a, c)
   };
+}
+
+// 🪙 Scalp gene (Nickel Nick's edge): an asset that is up on the day but just dipped since the last 15-minute round
+// is a buy; a quick pop since the last round on something held is a sell. The dip has to be big enough to clear
+// the round-trip trading cost, so crypto needs a wider dip than stocks. Needs the previous round's price
+// (c.state.genePx); in the daily backtest lab there is no intraday tick, so the gene stays silent there.
+function scalpSignal_(a, c) {
+  const last = c.state && c.state.genePx ? c.state.genePx[a.sym] : null;
+  if (!last || a.ret1 == null) return 0;
+  const k = costs_(a.type, c.cfg), cost = 2 * (k.slip + k.rate) + k.sellExtra;
+  const dip = Math.max(a.type === 'crypto' ? 0.006 : 0.002, cost / 2), change = a.price / last - 1;
+  if (a.ret1 >= 0.003 && change <= -dip && change > -0.03) return clamp_(-change / (dip * 2) + 0.5);
+  if (change >= Math.max(dip, cost)) return -clamp_(change / (cost * 2 || 0.01));
+  return 0;
+}
+
+// 🧇 Grid gene (Greta Grid's edge): in a sideways market, buy when price sits well below its 20-day mean and sell
+// when it is well above, scaled by how sideways the market is. Silent when daily swings are too small to beat
+// the round-trip cost, which is what kept the real grid churning fees before the Nov 2026 fix.
+function gridSignal_(a, c) {
+  if (a.er20 == null || !a.vol20 || !a.sma20) return 0;
+  const k = costs_(a.type, c.cfg), cost = 2 * (k.slip + k.rate) + k.sellExtra;
+  if (a.vol20 < cost * 1.5) return 0;
+  const sideways = clamp_(1 - a.er20 / 0.4, 0, 1);             // efficiency ratio 0 = pure chop, ≥0.4 = trending
+  const dev = (a.price / a.sma20 - 1) / a.vol20;                 // distance from the mean, in daily swings
+  return clamp_(-dev / 2) * sideways;
 }
 
 function stratGenome_(c, dna) {
@@ -201,6 +231,10 @@ function stratGenome_(c, dna) {
   });
 
   const o = [], held = Object.keys(c.holdings);
+  if (c.state && (g.scalp || 0) > 0) {   // the scalp gene compares against the previous round, so remember this one's prices after scoring
+    const px = {}; pool.forEach(a => { if (a.tradable) px[a.sym] = a.price; });
+    c.state.genePx = px;
+  }
   held.forEach(s => {
     const a = c.bySym[s];
     if (!a) return;
