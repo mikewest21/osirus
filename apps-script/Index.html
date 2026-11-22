@@ -741,6 +741,29 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
 .duelist .pow { position: absolute; top: -10px; font-size: 1.1rem; animation: pow .7s ease-out both; }
 .duelist.l .pow { right: -4px; } .duelist.r .pow { left: -4px; }
 .bout .vs { font-weight: 800; font-size: .8rem; letter-spacing: .08em; color: var(--soft); }
+/* 🔫 Ray-gun duel: one shared bar per bout. Each side fires its own colour; the winner's beam pushes the clash point
+   past the middle by how much more it gained this round, so its colour runs longer and the loser's shorter. */
+.beam { grid-column: 1 / -1; display: grid; grid-template-columns: 22px minmax(0, 1fr) 22px; align-items: center; gap: 4px; margin-top: 2px; }
+.beam .gun { width: 22px; height: 16px; display: block; }
+.beam .gun.a { color: var(--ca); } .beam .gun.b { color: var(--cb); transform: scaleX(-1); }
+.beam .rays { position: relative; height: 14px; border-radius: 7px; background: color-mix(in srgb, var(--soft) 18%, transparent); }
+.beam .ray { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; overflow: hidden; border-radius: 7px;
+  background: repeating-linear-gradient(90deg, var(--c) 0 10px, color-mix(in srgb, var(--c) 70%, #fff) 10px 14px);
+  background-size: 28px 100%; box-shadow: 0 0 6px var(--c), 0 0 14px color-mix(in srgb, var(--c) 45%, transparent);
+  animation: fire .55s cubic-bezier(.2,.8,.3,1) both, hum .9s linear infinite; animation-delay: calc(var(--d) + .25s), calc(var(--d) + .8s); }
+.beam .ray.a { --c: var(--ca); left: 0; width: var(--split); transform-origin: left; }
+.beam .ray.b { --c: var(--cb); right: 0; width: calc(100% - var(--split)); transform-origin: right; justify-content: flex-end; animation-direction: normal, reverse; }
+.beam .ray.weak { opacity: .55; box-shadow: none; }
+.beam .ray em { font-style: normal; font-size: .62rem; font-weight: 800; letter-spacing: .04em; padding: 0 6px; white-space: nowrap; color: #fff;
+  text-shadow: 0 0 3px rgba(0,0,0,.85), 0 1px 1px rgba(0,0,0,.6); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.beam .clash { position: absolute; top: 50%; left: var(--split); width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, #fff 0 25%, color-mix(in srgb, var(--cw) 80%, #fff) 45%, transparent 70%);
+  animation: clash .5s ease-out both, flicker .35s ease-in-out infinite alternate; animation-delay: calc(var(--d) + .75s), calc(var(--d) + 1.25s); }
+@keyframes fire { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes hum { to { background-position: 28px 0; } }
+@keyframes clash { from { opacity: 0; transform: scale(.2); } 60% { opacity: 1; transform: scale(1.8); } to { opacity: 1; transform: scale(1); } }
+@keyframes flicker { to { transform: scale(1.25); opacity: .8; } }
+@media (prefers-reduced-motion: reduce) { .beam .ray, .beam .clash { animation: none !important; } }
 .duel-season summary { cursor: pointer; font-size: .8rem; color: var(--soft); margin-top: 10px; }
 .duel-rec { list-style: decimal; margin: 6px 0 0 20px; padding: 0; font-size: .85rem; }
 .duel-rec li { display: grid; grid-template-columns: minmax(0, 1fr) 4.5em auto; gap: 8px; padding: 2px 0; }
@@ -2384,6 +2407,28 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
     var isGhost = function (n) { return /^Ghost of /.test(n); };
     var face = function (n) { return isGhost(n) ? '<span class="duel-ghost">👻</span>' : petSvg(n, moodOf(n), "tiny"); };
     var short = function (n) { return isGhost(n) ? (/SPY/.test(n) ? "SPY ghost" : "BTC ghost") : nick(n); };
+    // 🔫 The beam: each fighter fires its colour at the other, labelled with the buy or sell behind its round.
+    // The clash point sits at 50% for a draw and slides toward the loser by how lopsided the round was (18–82%).
+    var GUN = '<svg class="gun {k}" viewBox="0 0 22 16" aria-hidden="true"><path fill="currentColor" d="M1 5h9l2-3h4v3h3l2 2v2l-2 2h-3v2h-3l-1-2H8l-2 4H3l1-4H1z"/>' +
+      '<circle cx="19.5" cy="8" r="1.6" fill="#fff" opacity=".85"/></svg>';
+    var shot = function (n) {
+      var mv = moveOf(n);
+      if (isGhost(n)) return { label: "HODL " + (/SPY/.test(n) ? "SPY" : "BTC"), why: "the benchmark just holds" };
+      return mv && mv.side ? { label: mv.side + " " + mv.sym, why: mv.why || "" } : { label: "holding", why: "no trades yet" };
+    };
+    var beam = function (b) {
+      var ra = num(b.ra) ? b.ra : 0, rb = num(b.rb) ? b.rb : 0, tot = Math.abs(ra) + Math.abs(rb);
+      var split = b.win && tot > 0 ? 50 + 32 * (ra - rb) / tot : 50;
+      if (b.win) split = b.win === b.a ? Math.max(split, 56) : Math.min(split, 44);   // a win always shows
+      var A = shot(b.a), Bs = shot(b.b), ca = "var(" + petOf(b.a).a + ")", cb = "var(" + petOf(b.b).a + ")";
+      var lead = b.win === b.a ? A : b.win === b.b ? Bs : null;
+      var label = b.win ? short(b.win) + "'s " + lead.label + " overpowers " + short(b.win === b.a ? b.b : b.a) : short(b.a) + " and " + short(b.b) + " are evenly matched";
+      return '<div class="beam" role="img" aria-label="' + esc(label) + '" style="--ca:' + ca + ';--cb:' + cb + ';--cw:' + (b.win === b.b ? cb : ca) + ';--split:' + split.toFixed(1) + '%">' +
+        GUN.replace("{k}", "a") + '<span class="rays">' +
+        '<span class="ray a' + (b.win === b.b ? " weak" : "") + '" title="' + esc(short(b.a) + ": " + A.label + (A.why ? " — " + A.why : "")) + '"><em>' + esc(A.label) + '</em></span>' +
+        '<span class="ray b' + (b.win === b.a ? " weak" : "") + '" title="' + esc(short(b.b) + ": " + Bs.label + (Bs.why ? " — " + Bs.why : "")) + '"><em>' + esc(Bs.label) + '</em></span>' +
+        '<span class="clash"></span></span>' + GUN.replace("{k}", "b") + '</div>';
+    };
     $("race").innerHTML = ["stock", "crypto"].map(function (pool) {
       var P = B[pool];
       if (!P || !P.records || !P.records.length) return "";
@@ -2401,7 +2446,7 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
             (won ? '<span class="pow">💥</span>' : "") + '</div>';
         };
         return '<div class="bout" style="--d:' + (i * 0.08).toFixed(2) + 's">' + side(b.a, b.ra, "l") +
-          '<span class="vs">' + (b.win ? "VS" : "DRAW") + '</span>' + side(b.b, b.rb, "r") + '</div>';
+          '<span class="vs">' + (b.win ? "VS" : "DRAW") + '</span>' + side(b.b, b.rb, "r") + beam(b) + '</div>';
       }).join("") : '<p class="duel-empty">No rounds yet this season. The first bell rings after the next trading round that moves prices.</p>';
       var dots = function (last) { return last.map(function (x) { return '<i class="dot ' + x + '" title="' + (x === "W" ? "win" : x === "L" ? "loss" : "draw") + '"></i>'; }).join(""); };
       var table = '<ol class="duel-rec">' + P.records.map(function (r) {
@@ -2959,6 +3004,23 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
         { id: "contrarian", name: "Fear contrarian", emoji: "🦉", summary: "Buys when fear is high and trims as the crowd becomes greedy.", defaults: { signal: .25, exit: .35, size: .25, positions: 2, stop: .14, profit: .16, market: "all" } },
         { id: "factor", name: "Quant analyst", emoji: "🧮", summary: "Combines trend, relative strength and news into one ranked score.", defaults: { signal: .25, exit: .2, size: .25, positions: 3, stop: .12, profit: 0, market: "all" } }
       ] }, bios: bios, standings: standings, history: { times: times, series: series },
+      duels: (function () {   // demo battle: the last two history points, paired the same way the server pairs them
+        var out = {};
+        ["stock", "crypto"].forEach(function (pool) {
+          var ghost = pool === "stock" ? "Ghost of SPY" : "Ghost of BTC";
+          var names = roster.filter(function (r, k) { return !r[4] && poolOfDemo(r, k) === pool; }).map(function (r) { return r[1]; });
+          var ret = function (nm) { var s = series.find(function (x) { return x.name === nm; }).values; return s[n - 1] / s[n - 2] - 1; };
+          var list = names.slice(); if (list.length % 2) list.push(ghost);
+          var bouts = [];
+          for (var i = 0; i < list.length / 2; i++) {
+            var a = list[i], b = list[list.length - 1 - i], ra = ret(a), rb = ret(b);
+            bouts.push({ a: a, b: b, ra: ra, rb: rb, win: Math.abs(ra - rb) > 1e-7 ? (ra > rb ? a : b) : null });
+          }
+          out[pool] = { rounds: n - 1, ghost: ghost, latest: { round: n - 1, time: times[n - 1], bouts: bouts },
+            records: names.map(function (nm, k) { return { name: nm, w: 20 + k * 3, l: 18 + (k % 3) * 4, d: k % 2, last: ["W", "L", "W", "D", "L"].slice(k % 3) }; }) };
+        });
+        return out;
+      })(),
       warmup: { days: 30, from: "2026-08-02", to: "2026-08-31", seasonStart: times[40], trades: 57, bestAsset: { sym: "NVDA", ret: .142 }, worstAsset: { sym: "SOL", ret: -.083 },
         results: roster.filter(function (r) { return !r[4]; }).map(function (r, k) { return { name: r[1], ret: .06 - k * .017, trades: k === 7 ? 0 : 4 + k * 2 }; }) },
       state: { updated: times[n - 1], stocksOpen: true, warn: [], macro: {
