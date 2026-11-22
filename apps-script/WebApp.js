@@ -11,16 +11,21 @@ function doGet() {
 }
 
 // ScriptApp.getService().getUrl() can return a dead /exec link, so the deployment IDs live here.
-// Update the published one after a push: clasp update-deployment <ACADEMY_EXEC_ID>
+// Development runs on HEAD (/dev: always the latest clasp push, editors only, uses no versions). The public /exec
+// link stays frozen on its last version until you publish: ./publish.sh "description" (updates it in place,
+// same URL, one version used). Flip ACADEMY_DEV_MODE to false once the build is final.
 const ACADEMY_EXEC_ID = 'AKfycbwmq6q5mX7oe-hbis1Q77u9L2_4y6XjG2c1MzigoEZoN6_aENTrSrqJbp9DPjm0llc9vw';
 const ACADEMY_HEAD_ID = 'AKfycbxWVRneAkcCKC-ma-xqzerigjrssP4V7AuZWPmMSJEd';
+const ACADEMY_DEV_MODE = true;
 
 function openWebApp() {
   assertOwner_();
   const link = (id, kind) => { const u = 'https://script.google.com/macros/s/' + id + '/' + kind; return '<a href="' + u + '" target="_blank">' + kind + '</a>'; };
-  const html = '<div style="font-family:Georgia,serif">' +
-    '<p>Open the Academy: <b>' + link(ACADEMY_EXEC_ID, 'exec') + '</b> (published version)</p>' +
-    '<p>Latest code: ' + link(ACADEMY_HEAD_ID, 'dev') + ' (always the newest push)</p></div>';
+  const dev = '<p>' + (ACADEMY_DEV_MODE ? 'Open the Academy: <b>' + link(ACADEMY_HEAD_ID, 'dev') + '</b>' : 'Latest code: ' + link(ACADEMY_HEAD_ID, 'dev')) +
+    ' (latest push, editors only)</p>';
+  const pub = '<p>' + (ACADEMY_DEV_MODE ? 'Public link: ' + link(ACADEMY_EXEC_ID, 'exec') : 'Open the Academy: <b>' + link(ACADEMY_EXEC_ID, 'exec') + '</b>') +
+    (ACADEMY_DEV_MODE ? ' (frozen at the last publish)' : ' (published version)') + '</p>';
+  const html = '<div style="font-family:Georgia,serif">' + (ACADEMY_DEV_MODE ? dev + pub : pub + dev) + '</div>';
   SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(420).setHeight(140), '📜 Game of Trades Academy');
 }
 
