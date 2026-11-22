@@ -128,6 +128,16 @@ function execute_(def, b, lots, mkt, cfg, o, now) {
   const heldQty = mine.reduce((s, l) => s + l.qty, 0);
 
   if (o.side === 'BUY') {
+    // Re-entry cooldown: after a stop-loss (any urgent risk exit) the bot may not buy that asset back for
+    // STOP_COOLDOWN_HOURS. Without it, a signal that was still "on" re-bought on the next 15-minute round and
+    // stopped out again — Season 8: Talia and Aldric did buy → stop → buy three times, ~$1,000 of losses and fees.
+    const stopAt = b.state && b.state.stopOut && b.state.stopOut[o.sym];
+    const coolMs = (+cfg.STOP_COOLDOWN_HOURS || 0) * 36e5;
+    if (stopAt && coolMs > 0 && now - new Date(stopAt) < coolMs) {
+      const left = Math.ceil((coolMs - (now - new Date(stopAt))) / 36e5);
+      EXEC_BLOCK_ = 'stopped out of ' + o.sym + ' recently; cooling off ' + left + ' more hour' + (left === 1 ? '' : 's');
+      return null;
+    }
     const cap = (def.maxPos || cfg.MAX_POSITION_PCT) * markValue_(def.id, b, lots, mkt) - heldQty * a.price;
     const budget = Math.min(o.usd, b.cash, cap);
     const gross = (budget - k.flat) / (1 + k.rate);
@@ -185,6 +195,13 @@ function execute_(def, b, lots, mkt, cfg, o, now) {
   const pnl = st + lt, tax = computeTax_(b, st, lt, cfg);
   b.cash += gross - fee - tax; b.fees += fee; b.taxes += tax; b.trades++;
   if (pnl > 0) b.wins++; else b.losses++;
+  if (o.urgent) {
+    b.state = b.state || {};
+    const keep = {}, coolMs = (+cfg.STOP_COOLDOWN_HOURS || 0) * 36e5;
+    Object.keys(b.state.stopOut || {}).forEach(k => { if (now - new Date(b.state.stopOut[k]) < coolMs) keep[k] = b.state.stopOut[k]; });
+    keep[o.sym] = new Date(now).toISOString();
+    b.state.stopOut = keep;
+  }
   if (dayTrade) { b.state = b.state || {}; b.state.pdt = (b.state.pdt || []).concat([Utilities.formatDate(now, TZ, 'yyyy-MM-dd')]).slice(-12); }
   return [now, def.name, 'SELL', o.sym, qty, fill, gross, fee, pnl, tax, b.cash, o.why, pick_(def.lines.sell)];
 }

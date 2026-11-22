@@ -233,7 +233,11 @@ function stratGreta_(c) {
       c.state.grid = null;
       return o;
     }
-    const sells = filled.filter(f => L >= f + 1);
+    // Trigger on the level PRICES, not on the floor()ed level number. floor() puts any price in [level k, level k+1)
+    // at "level k", so "L <= -1" fired the moment price dipped under the centre and "L >= f + 1" sold it back on the
+    // first tick above — round trips of ~0.2–0.7% while the log claimed "+4.3% per slice" (Season 8: Greta Crypto
+    // paid $141 in fees on 24 such trades). Now a slice is bought at or below its level and sold one full step up.
+    const sells = filled.filter(f => a.price >= price(g, f + 1));
     if (sells.length && c.holdings[g.sym]) {
       o.push({ sym: g.sym, side: 'SELL', frac: Math.min(1, sells.length / filled.length),
         why: 'grid sell on ' + g.sym + ': bounced back up from level ' + sells[0] + ' (+' + (g.spacing * 100).toFixed(1) + '% per slice)' });
@@ -241,7 +245,7 @@ function stratGreta_(c) {
       return o;
     }
     const buys = [];
-    for (let k = -1; k >= -g.levels; k--) if (L <= k && !g.filled[k]) buys.push(k);
+    for (let k = -1; k >= -g.levels; k--) if (a.price <= price(g, k) && !g.filled[k]) buys.push(k);
     if (buys.length) {
       const take = buys.slice(0, 2);
       take.forEach(k => g.filled[k] = true);
@@ -406,13 +410,31 @@ function stratMira_(c) {
   const P = c.params, o = [], pos = c.state.pairs = c.state.pairs || {};
   const pool = (c.assets[0] || {}).type || 'crypto', pairs = PAIRS[pool].filter(p => c.bySym[p[0]] && c.bySym[p[1]]);
   Object.keys(pos).forEach(s => { if (!c.holdings[s]) delete pos[s]; });
+  const stillCheap = s => {   // another pair, past the entry line, where s is the lagging side
+    let best = null;
+    pairs.forEach(([x, y]) => {
+      if (x !== s && y !== s) return;
+      const z = spreadZ_(c.bySym[x], c.bySym[y]);
+      if (z == null || Math.abs(z) < P.entryZ || (z < 0 ? x : y) !== s) return;
+      if (!best || Math.abs(z) > Math.abs(best.z)) best = { rich: x === s ? y : x, z: -Math.abs(z) };
+    });
+    return best;
+  };
   Object.keys(c.holdings).forEach(s => {
     const a = c.bySym[s], p = pos[s];
     if (!a) return;
     const g = a.price / c.holdings[s].avgCost - 1;
     if (!p) { o.push({ sym: s, side: 'SELL', frac: 1, why: s + ' is not part of an open pair trade' }); return; }
     const z = spreadZ_(c.bySym[p.cheap], c.bySym[p.rich]), days = daysSince_(p.day, c.today);
+    // Its pair is done, but is it still the lagging side of another stretched pair? Then keep the position and
+    // re-tag it, rather than selling and buying the same asset back (Season 8: sold MSFT on the MSFT/AAPL close,
+    // paid $22 tax, and bought MSFT straight back as the cheap side of AMZN/MSFT).
+    const next = (z != null && z >= -P.exitZ) || days >= P.maxDays ? stillCheap(s) : null;
     if (g <= -P.stop) o.push({ sym: s, side: 'SELL', frac: 1, why: 'stop on the ' + p.cheap + '/' + p.rich + ' pair at ' + pct_(g), urgent: true });
+    else if (next) {
+      pos[s] = { cheap: s, rich: next.rich, day: c.today };
+      kept_(c, s, 'the ' + p.cheap + '/' + p.rich + ' gap closed, but ' + s + ' still lags ' + next.rich + ' (z ' + next.z.toFixed(2) + '); holding it for that pair instead');
+    }
     else if (z != null && z >= -P.exitZ) o.push({ sym: s, side: 'SELL', frac: 1, why: 'the ' + p.cheap + '/' + p.rich + ' gap closed (z ' + z.toFixed(2) + '), ' + pct_(g) });
     else if (days >= P.maxDays) o.push({ sym: s, side: 'SELL', frac: 1, why: 'gave the ' + p.cheap + '/' + p.rich + ' gap ' + days + ' days; it never closed (' + pct_(g) + ')' });
     else kept_(c, s, p.cheap + ' vs ' + p.rich + ' still stretched (z ' + (z == null ? 'n/a' : z.toFixed(2)) + ', sells at ' + (-P.exitZ).toFixed(2) + '), ' + pct_(g) + ', day ' + days + ' of ' + P.maxDays);
@@ -426,7 +448,8 @@ function stratMira_(c) {
     seen_(c, x + '/' + y, ok, x + ' vs ' + y + ' gap z ' + z.toFixed(2) + ' (buys the lagging side past ±' + P.entryZ + ')' + (Math.abs(z) >= P.entryZ ? '; ' + cheap + ' is the cheap side' : ''));
     if (ok) ideas.push({ cheap, rich, z: zc });
   });
-  ideas.sort((p, q) => p.z - q.z).slice(0, slots).forEach(p => {
+  // One buy per asset: ETH can lag both LINK and BTC at once, which bought it twice in one round (Season 8).
+  ideas.sort((p, q) => p.z - q.z).filter((p, i, all) => all.findIndex(q => q.cheap === p.cheap) === i).slice(0, slots).forEach(p => {
     pos[p.cheap] = { cheap: p.cheap, rich: p.rich, day: c.today };
     o.push({ sym: p.cheap, side: 'BUY', usd: c.equity * P.size, why: p.cheap + ' fell ' + Math.abs(p.z).toFixed(1) + ' standard deviations behind ' + p.rich + '; betting the gap closes' });
   });
