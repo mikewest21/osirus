@@ -120,6 +120,7 @@ let EXEC_BLOCK_ = '';
 function execute_(def, b, lots, mkt, cfg, o, now) {
   const a = mkt.bySym[o.sym];
   EXEC_BLOCK_ = '';
+  releaseWash_(b, now, cfg);
   if (!a || !a.price) { EXEC_BLOCK_ = 'no price for ' + o.sym; return null; }
   if (def.pool && a.type !== def.pool) { EXEC_BLOCK_ = o.sym + ' belongs to the ' + a.type + ' pool'; return null; }
   if (!a.tradable) { EXEC_BLOCK_ = a.type === 'stock' ? 'stock market closed' : o.sym + ' not tradable right now'; return null; }
@@ -149,8 +150,11 @@ function execute_(def, b, lots, mkt, cfg, o, now) {
     }
     const fill = a.price * (1 + k.slip), qty = gross / fill, fee = gross * k.rate + k.flat;
     b.cash -= gross + fee; b.fees += fee; b.trades++;
-    lots.push({ bot: def.id, sym: o.sym, type: a.type, qty, cost: (gross + fee) / qty, opened: now });
-    return [now, def.name, 'BUY', o.sym, qty, fill, gross, fee, 0, 0, b.cash, o.why, pick_(def.lines.buy)];
+    const lot = { bot: def.id, sym: o.sym, type: a.type, qty, cost: (gross + fee) / qty, opened: now, washAdj: 0 };
+    lots.push(lot);
+    const moved = absorbWash_(b, lot, cfg);
+    return [now, def.name, 'BUY', o.sym, qty, fill, gross, fee, 0, 0, b.cash,
+      o.why + (moved ? ' (wash sale: $' + moved.toFixed(2) + ' of an earlier loss moves into these shares\' tax basis)' : ''), pick_(def.lines.buy)];
   }
 
   if (heldQty <= 0) { EXEC_BLOCK_ = 'nothing to sell'; return null; }
@@ -184,15 +188,18 @@ function execute_(def, b, lots, mkt, cfg, o, now) {
       return null;
     }
   }
-  let left = qty, st = 0, lt = 0;
+  let left = qty, st = 0, lt = 0, pnl = 0;
   for (const l of mine) {                                   // FIFO: oldest lots first
     if (left <= 1e-12) break;
-    const take = Math.min(l.qty, left), gain = (netPerUnit - l.cost) * take;
+    const take = Math.min(l.qty, left), gain = (netPerUnit - l.cost - (l.washAdj || 0)) * take;   // tax basis
+    pnl += (netPerUnit - l.cost) * take;                                                           // cash result
     if (isLongTerm_(l.opened, now)) lt += gain; else st += gain;
     l.qty -= take; left -= take;
   }
   for (let i = lots.length - 1; i >= 0; i--) if (lots[i].qty <= 1e-10) lots.splice(i, 1);
-  const pnl = st + lt, tax = computeTax_(b, st, lt, cfg);
+  const wash = washSale_(def, b, lots, a, o.sym, qty, st, lt, cfg, now);
+  st = wash.st; lt = wash.lt;
+  const tax = computeTax_(b, st, lt, cfg);
   b.cash += gross - fee - tax; b.fees += fee; b.taxes += tax; b.trades++;
   if (pnl > 0) b.wins++; else b.losses++;
   if (o.urgent) {
@@ -203,7 +210,7 @@ function execute_(def, b, lots, mkt, cfg, o, now) {
     b.state.stopOut = keep;
   }
   if (dayTrade) { b.state = b.state || {}; b.state.pdt = (b.state.pdt || []).concat([Utilities.formatDate(now, TZ, 'yyyy-MM-dd')]).slice(-12); }
-  return [now, def.name, 'SELL', o.sym, qty, fill, gross, fee, pnl, tax, b.cash, o.why, pick_(def.lines.sell)];
+  return [now, def.name, 'SELL', o.sym, qty, fill, gross, fee, pnl, tax, b.cash, o.why + wash.note, pick_(def.lines.sell)];
 }
 
 // Day trades counted over the last 5 business days (weekdays, today included), and whether this account is under the limit.
@@ -227,6 +234,66 @@ function daysToLongTerm_(opened, now) {
   const day = Math.min(d, new Date(Date.UTC(y, m + 1, 0)).getUTCDate());           // same date next year (Feb 29 → Feb 28)
   const first = Date.UTC(y, m, day, 12) + 864e5;                                    // the day after the anniversary is long-term
   return Math.ceil((first - new Date(key(now) + 'T12:00:00Z').getTime()) / 864e5);
+}
+
+/* ---------- wash sales (stocks only) ----------
+ * A stock sold at a loss can't use that loss if the same stock is bought within WASH_SALE_DAYS (30) before or after.
+ * The loss moves into the replacement shares' tax basis instead (lot.washAdj, per unit), so it comes back when
+ * those shares are sold. lot.cost stays the cash cost: strategies' stops and targets are unaffected.
+ *   - replacement shares already held (bought in the 30 days before): disallowed now, added to those lots
+ *   - no replacement yet: the loss waits in state.wash; a buy inside the window absorbs it, otherwise it is
+ *     released to the loss carryforward when the window closes
+ * Crypto is exempt (not a "security" under §1091 as of Nov 2026). Holding periods are not tacked. */
+function washSale_(def, b, lots, a, sym, soldQty, st, lt, cfg, now) {
+  const days = +cfg.WASH_SALE_DAYS || 0, loss = -(st + lt), out = { st, lt, note: '' };
+  if (!days || a.type !== 'stock' || !(loss > 0.005)) return out;
+  const win = days * 864e5;
+  const repl = lots.filter(l => l.bot === def.id && l.sym === sym && l.qty > 0 && now - new Date(l.opened) <= win);
+  let need = soldQty, nowAmt = 0;
+  for (const l of repl) {
+    if (need <= 1e-12) break;
+    const use = Math.min(l.qty, need), amt = loss * use / soldQty;
+    l.washAdj = (l.washAdj || 0) + amt / l.qty;
+    nowAmt += amt; need -= use;
+  }
+  const later = loss - nowAmt;
+  if (later > 0.005) {
+    b.state = b.state || {};
+    b.state.wash = (b.state.wash || []).concat([{ sym, loss: +later.toFixed(6), qty: need, at: new Date(now).toISOString() }]);
+  }
+  // None of the loss offsets gains now: the part with replacement shares is in their basis, the rest is on hold.
+  // (st + lt < 0 here, so any gain in one bucket was already netted away by the other.)
+  out.st = 0; out.lt = 0;
+  out.note = nowAmt > 0.005
+    ? ' (wash sale: $' + nowAmt.toFixed(2) + ' loss disallowed, ' + sym + ' bought within ' + days + ' days; moved into those shares\' basis' +
+      (later > 0.005 ? ', $' + later.toFixed(2) + ' more on hold' : '') + ')'
+    : ' (wash-sale watch: $' + later.toFixed(2) + ' loss on hold ' + days + ' days in case ' + sym + ' is bought back)';
+  return out;
+}
+
+function absorbWash_(b, lot, cfg) {
+  if (lot.type !== 'stock' || !b.state || !b.state.wash || !b.state.wash.length) return 0;
+  const win = (+cfg.WASH_SALE_DAYS || 0) * 864e5;
+  let room = lot.qty, moved = 0;
+  b.state.wash.forEach(w => {
+    if (w.sym !== lot.sym || room <= 1e-12 || w.qty <= 1e-12 || new Date(lot.opened) - new Date(w.at) > win) return;
+    const use = Math.min(room, w.qty), amt = w.loss * use / w.qty;
+    moved += amt; w.loss -= amt; w.qty -= use; room -= use;
+  });
+  b.state.wash = b.state.wash.filter(w => w.loss > 0.005 && w.qty > 1e-12);
+  if (moved) lot.washAdj = (lot.washAdj || 0) + moved / lot.qty;
+  return moved;
+}
+
+// Window closed with no buy-back: the held loss becomes an ordinary carryforward.
+function releaseWash_(b, now, cfg) {
+  if (!b.state || !b.state.wash || !b.state.wash.length) return;
+  const win = (+cfg.WASH_SALE_DAYS || 0) * 864e5;
+  b.state.wash = b.state.wash.filter(w => {
+    if (win && now - new Date(w.at) <= win) return true;
+    b.carry = (b.carry || 0) + w.loss;
+    return false;
+  });
 }
 
 // Simplified US-style tax: net short vs long term, bank losses as a carryforward, tax gains when realized.
@@ -261,13 +328,14 @@ function liquidationBreakdown_(id, b, lots, mkt, cfg, now) {
     const mark = l.qty * (a ? a.price : l.cost);
     const gross = mark * (1 - k.slip);
     const fee = gross * (k.rate + k.sellExtra) + k.flat;
-    const gain = gross - fee - l.qty * l.cost;
+    const gain = gross - fee - l.qty * (l.cost + (l.washAdj || 0));
     slip += mark - gross;
     fees += fee;
     net += gross - fee;
     if (isLongTerm_(l.opened, now)) lt += gain; else st += gain;
   });
-  const tax = computeTax_({ carry: b.carry }, st, lt, cfg);
+  const held = ((b.state && b.state.wash) || []).reduce((s, w) => s + w.loss, 0);
+  const tax = computeTax_({ carry: (b.carry || 0) + held }, st, lt, cfg);
   return { value: net - tax, slip: slip, fees: fees, tax: tax };
 }
 
@@ -297,19 +365,22 @@ function saveBots_(bots) {
   if (rows.length) getSheet_(SHEETS.BOTS).getRange(2, 1, rows.length, BOT_HEADERS.length).setValues(rows);
 }
 
-const HOLD_HEADERS = ['Bot', 'Symbol', 'Type', 'Qty', 'Cost/Unit (incl. fees)', 'Opened', 'Price', 'Market Value', 'Unrealized P/L'];
+const HOLD_HEADERS = ['Bot', 'Symbol', 'Type', 'Qty', 'Cost/Unit (incl. fees)', 'Opened', 'Price', 'Market Value', 'Unrealized P/L',
+  'Wash-Sale Basis Adj/Unit'];
 
 function loadLots_() {
   return getSheet_(SHEETS.HOLD).getDataRange().getValues().slice(1).filter(r => r[0] && +r[3] > 0)
-    .map(r => ({ bot: r[0], sym: r[1], type: r[2], qty: +r[3], cost: +r[4], opened: r[5] }));
+    .map(r => ({ bot: r[0], sym: r[1], type: r[2], qty: +r[3], cost: +r[4], opened: r[5], washAdj: +r[9] || 0 }));
 }
 
 // Overwrite in place, then clear only the leftover rows: the sheet is never empty mid-save.
 function saveLots_(lots, mkt) {
   const sh = getSheet_(SHEETS.HOLD), had = Math.max(0, sh.getLastRow() - 1);
+  if (sh.getRange(1, HOLD_HEADERS.length).getValue() !== HOLD_HEADERS[HOLD_HEADERS.length - 1])
+    sh.getRange(1, 1, 1, HOLD_HEADERS.length).setValues([HOLD_HEADERS]);
   if (lots.length) sh.getRange(2, 1, lots.length, HOLD_HEADERS.length).setValues(lots.map(l => {
     const px = mkt.bySym[l.sym] ? mkt.bySym[l.sym].price : l.cost;
-    return [l.bot, l.sym, l.type, l.qty, l.cost, l.opened, px, l.qty * px, l.qty * (px - l.cost)];
+    return [l.bot, l.sym, l.type, l.qty, l.cost, l.opened, px, l.qty * px, l.qty * (px - l.cost), l.washAdj || 0];
   }));
   if (had > lots.length) sh.getRange(2 + lots.length, 1, had - lots.length, HOLD_HEADERS.length).clearContent();
 }
