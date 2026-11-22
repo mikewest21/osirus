@@ -204,6 +204,7 @@ function insights_() {
     try { out.news = refreshNewsScores_(readConfig_()); } catch (e) { out.news = 'failed: ' + e.message; }
     try { out.banter = writeBanterNow_(); } catch (e) { out.banter = 'failed: ' + e.message; }
     try { out.lab = labStep_(t0 + 270e3); } catch (e) { out.lab = 'failed: ' + e.message; }   // the backtest lab uses what's left of the slot
+    try { out.camp = campStep_(t0 + 270e3); } catch (e) { out.camp = 'failed: ' + e.message; }   // then the evolution camp, within its daily budget
   } finally { cache.remove('insights_busy'); }
   props.setProperty('INSIGHTS_LAST', JSON.stringify(out));
   return out;

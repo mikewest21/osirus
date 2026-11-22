@@ -2461,6 +2461,11 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
   /* ---------- Study hall ---------- */
   // The backtest lab: each bot replays the past year with small setting changes; a change is adopted only if it also
   // wins the most recent stretch it never trained on.
+  function campInfo(C) {
+    if (!C) return '<dt>Evolution camp</dt><dd>starts within a few minutes</dd>';
+    var one = function (p, label) { var x = C[p]; if (!x) return ""; return label + ' generation ' + x.gen + (x.best && num(x.best.fit) ? ' (best risk-adjusted score ' + x.best.fit.toFixed(3) + ')' : ''); };
+    return '<dt>Evolution camp</dt><dd>' + [one("stock", "📈 stocks"), one("crypto", "₿ crypto")].filter(Boolean).join(' · ') + (C.updated ? ', updated ' + when(C.updated) : '') + '</dd>';
+  }
   function labInfo(L) {
     if (!L) return '<dt>Backtest lab</dt><dd>starts within a few minutes</dd>';
     return '<dt>Backtest lab</dt><dd>' + (L.done ? 'last run ' + when(L.finished || L.started) : 'running: ' + L.i + ' of ' + L.total + ' bots') + ', ' + L.adopted + ' lesson' + (L.adopted === 1 ? '' : 's') + ' adopted</dd>';
@@ -2479,7 +2484,7 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
     $("coachInfo").innerHTML = '<dl class="kv"><dt>Last session</dt><dd>' + (S && S.last ? when(S.last.at) : "not yet") + '</dd>' +
       '<dt>Coach</dt><dd>' + esc(S && S.last ? S.last.coach : (D.banter && D.banter.lines ? "Gemini" : "house rules")) + '</dd>' +
       '<dt>Next session</dt><dd>5:00 PM New York</dd><dt>Experiments running</dt><dd>' + Object.keys(live).length + '</dd>' +
-      '<dt>Hit rate</dt><dd>' + (S && S.hitRate != null ? Math.round(S.hitRate * 100) + '% of ' + S.decided + ' decided' : "none decided yet") + '</dd>' + labInfo(S && S.lab) + '</dl>' + labTable(S && S.lab);
+      '<dt>Hit rate</dt><dd>' + (S && S.hitRate != null ? Math.round(S.hitRate * 100) + '% of ' + S.decided + ' decided' : "none decided yet") + '</dd>' + labInfo(S && S.lab) + campInfo(S && S.camp) + '</dl>' + labTable(S && S.lab);
     var byName = {}; ((S && S.cards) || []).forEach(function (c) { byName[c.name] = c; });
     var names = fighters().length ? fighters() : Object.keys(D.bios).filter(function (n) { return !D.bios[n].ghost; });
     $("studyCards").innerHTML = names.map(function (n) {

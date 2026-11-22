@@ -531,14 +531,22 @@ function breed_(review, rng) {
     if (c1.regimes[best].avg > 0) { params.regimeBias[best] = 1.25; lessons.push('The champion was strongest in ' + name + ' ' + t + ' markets, so the child presses harder there.'); }
   }
 
+  normalizeDna_({ genes, params }, d1);
+  return { dna: { genes, params }, lessons, alpha };
+}
+
+// Keep a genome inside the ranges a bot can trade with (shared by breeding and the evolution camp).
+function normalizeDna_(dna, fallback) {
+  const g = dna.genes, params = dna.params;
+  GENES.forEach(k => g[k] = clamp_(+g[k] || 0, 0, 1));
   params.buyThreshold = clamp_(params.buyThreshold, 0.05, 0.6);
   params.sellThreshold = clamp_(params.sellThreshold, -0.9, -0.05);
   params.positionSize = clamp_(params.positionSize, 0.05, 0.4);
   params.maxPositions = Math.round(clamp_(params.maxPositions, 1, 4));
   params.stopLoss = params.stopLoss < 0.03 ? 0 : clamp_(params.stopLoss, 0.03, 0.3);
   params.takeProfit = params.takeProfit < 0.03 ? 0 : clamp_(params.takeProfit, 0.03, 0.5);
-  if (!GENES.some(k => genes[k] > 0.05)) genes[dominantGene_(d1)] = 1;   // never born empty
-  return { dna: { genes, params }, lessons, alpha };
+  if (!GENES.some(k => g[k] > 0.05)) g[fallback ? dominantGene_(fallback) : 'dca'] = 1;   // never born empty
+  return dna;
 }
 
 function birthChallenger_(review, season, pool, trained) {

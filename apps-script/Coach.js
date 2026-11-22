@@ -404,5 +404,6 @@ function studyForWeb_() {
   getCompetitionRoster_().forEach(d => { if (P[d.id]) lessons[d.name] = Object.keys(P[d.id]).map(k => ({ lever: k, label: (leversFor_(d)[k] || [])[4] || k, to: P[d.id][k], was: (leversFor_(d)[k] || [])[0] })); });
   const decided = notebook.filter(r => r.status === 'adopted' || r.status === 'rejected');
   let lab = null; try { lab = labForWeb_(); } catch (e) { lab = null; }
-  return { last, cards, live, notebook, lessons, lab, hitRate: decided.length ? decided.filter(r => r.status === 'adopted').length / decided.length : null, decided: decided.length };
+  let camp = null; try { camp = campForWeb_(); } catch (e) { camp = null; }
+  return { last, cards, live, notebook, lessons, lab, camp, hitRate: decided.length ? decided.filter(r => r.status === 'adopted').length / decided.length : null, decided: decided.length };
 }

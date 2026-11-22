@@ -286,7 +286,7 @@ function resetSeasonEndTrigger_() {
 // calendar midnights. This is the single clock used by the trigger and web app.
 function seasonClock_() {
   const props = PropertiesService.getScriptProperties();
-  const days = Math.max(1, Math.min(30, Math.round(Number(readConfig_().SEASON_DAYS) || 20)));
+  const days = Math.max(1, Math.min(30, Math.round(Number(readConfig_().SEASON_DAYS) || 10)));
   let startedMs = new Date(props.getProperty('SEASON_STARTED')).getTime();
   if (!isFinite(startedMs)) {
     startedMs = Date.now();

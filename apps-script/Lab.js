@@ -206,18 +206,32 @@ function trainChallenger_(review, pool, camp) {
   }
   const st = review.stats, mkDef = (b, i) => ({ id: 'CAMP_' + pool + i, name: 'Camp ' + pool + ' ' + i, emoji: '🥚', pool, challenger: true, dna: b.dna,
     lines: { buy: [pick_(st[0].def.lines.buy)], sell: [pick_(st[0].def.lines.sell)] } });
-  const sharpe = v => { const r = v.slice(1).map((x, i) => v[i] > 0 ? x / v[i] - 1 : 0), sd = r.length > 1 ? stdev_(r) : 0; return sd > 0 ? mean_(r) / sd : 0; };
-  const scored = brood.map((b, i) => {
-    const def = mkDef(b, i), run = labRun_(def, camp.tl, camp.cfg, paramsFor_(def)), v = run.vals;
-    return { b, def, trades: run.trades, ret: v[v.length - 1] / v[0] - 1, sharpe: sharpe(v) };
-  });
+  const scored = brood.map((b, i) => Object.assign({ b, def: mkDef(b, i) }, campScore_(b.dna, pool, camp.tl, camp.cfg)));   // one replay each
   // A bot that never trades can never win: siblings that sat out the replay are only picked if all of them did
   const field = scored.filter(x => x.trades >= MIN_PARENT_TRADES);
-  const best = (field.length ? field : scored).sort((x, y) => y.sharpe - x.sharpe)[0], P = x => pct_(x);
+  let best = (field.length ? field : scored).sort((x, y) => y.sharpe - x.sharpe)[0];
+  const P = x => pct_(x), robust = x => Math.min(x.fit, x.exam);   // must hold up on the days it trained on AND the unseen ones
+  // 🧬 The evolution camp's elites (many simulated generations) challenge the live-bred sibling on the unseen exam days.
+  let ce = { gen: 0, elites: [] };
+  try { ce = campElites_(pool); } catch (e) { /* no camp yet */ }
+  const rivals = ce.elites.map((x, i) => Object.assign({ b: { dna: JSON.parse(JSON.stringify(x.dna)), lessons: [] }, def: mkDef({ dna: x.dna }, 'E' + i), camp: true },
+    campScore_(x.dna, pool, camp.tl, camp.cfg))).filter(x => x.trades >= MIN_PARENT_TRADES);
+  const champ = rivals.sort((x, y) => robust(y) - robust(x))[0];
+  const liveBest = best;
+  if (champ && field.length && robust(champ) > robust(best) && champ.exam > 0) {
+    champ.b.dna.params.universe = pool;
+    champ.b.lessons = ['🧬 Evolved in the camp over ' + ce.gen + ' simulated generations of natural selection on the past ' + camp.tl.days.length + ' days of real prices.',
+      'It beat the champions\' own bred sibling where it counts: on the last ' + (camp.tl.days.length - campSplit_(camp.tl)) + ' days, which no camp generation was selected on (' +
+      P(champ.examRet) + ' vs ' + P(liveBest.examRet) + ', return per unit of risk ' + champ.exam.toFixed(3) + ' vs ' + liveBest.exam.toFixed(3) + ').',
+      'The champions\' bloodline still enters the camp, so their edge keeps competing there.'];
+    best = { b: champ.b, def: champ.def, ret: champ.trainRet, trades: champ.trades };
+  } else if (field.length) {
+    best.b.lessons.push('🏕️ Training camp: picked from ' + CAMP_BROOD + ' siblings after a ' + camp.tl.days.length + '-day replay of real prices (' +
+      P(best.ret) + ', ' + best.trades + ' trades; siblings ' + scored.filter(x => x !== best).map(x => P(x.ret)).join(', ') + ').' +
+      (champ ? ' It also held off the evolution camp\'s best (generation ' + ce.gen + ') on the unseen recent days.' : ''));
+  } else best.b.lessons.push('🏕️ Training camp: none of the ' + CAMP_BROOD + ' siblings traded much in the replay, so it may need the coach.');
+  try { campAdopt_(pool, brood.map(b => b.dna)); } catch (e) { /* camp optional */ }
   const lessons = best.b.lessons;
-  lessons.push('🏕️ Training camp: picked from ' + CAMP_BROOD + ' siblings after a ' + camp.tl.days.length + '-day replay of real prices (' +
-    P(best.ret) + ', ' + best.trades + ' trades; siblings ' + scored.filter(x => x !== best).map(x => P(x.ret)).join(', ') + ').' +
-    (field.length ? '' : ' None of them traded much, so it may need the coach.'));
   if (Date.now() - camp.t0 < CAMP_BUDGET_MS) {
     const r = labEntrant_(best.def, camp.tl, camp.cfg, null);
     if (r.adopt) {
