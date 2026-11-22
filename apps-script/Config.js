@@ -28,7 +28,7 @@ const DEFAULT_CONFIG = [
   ['MAX_POSITION_PCT', 0.4, 'Max share of a bot\'s value in one asset. Only the ghost benchmarks are exempt (maxPos: 1 in GHOSTS).'],
   ['DCA_USD', 250, 'Diamond Dana\'s daily buy'],
   ['ACCUM_ASSET', 'BTC', 'Asset Stacker Sam accumulates (must match a Universe symbol, e.g. BTC, TAO, XRP or LINK)'],
-  ['SEASON_DAYS', 10, 'Automatically end, review and evolve each season after this many days (1–30)'],
+  ['SEASON_DAYS', 20, 'Automatically end, review and evolve each season after this many days (1–30)'],
   ['PDT_RULE', true, 'Pattern day trader rule: accounts under PDT_MIN_EQUITY get PDT_MAX day trades (same-day buy + sell of a stock) per 5 business days'],
   ['PDT_MIN_EQUITY', 25000, 'Accounts worth at least this are exempt from the day-trade limit'],
   ['PDT_MAX', 3, 'Day trades allowed per rolling 5 business days under the limit'],

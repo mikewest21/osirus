@@ -242,7 +242,7 @@ function startAutoTrading() {
   startStudyHall_();
   ensureSeasonEndTrigger_(true);
   ensureInsightsTrigger_(true);
-  SpreadsheetApp.getActive().toast('Bots trade every 15 minutes. Study hall runs daily at 5 PM, and each season ends automatically after 10 days.', 'Game of Trades', 8);
+  SpreadsheetApp.getActive().toast('Bots trade every 15 minutes. Study hall runs daily at 5 PM, and each season ends automatically after ' + seasonClock_().days + ' days.', 'Game of Trades', 8);
 }
 
 function stopAutoTrading() {
@@ -286,7 +286,7 @@ function resetSeasonEndTrigger_() {
 // calendar midnights. This is the single clock used by the trigger and web app.
 function seasonClock_() {
   const props = PropertiesService.getScriptProperties();
-  const days = Math.max(1, Math.min(30, Math.round(Number(readConfig_().SEASON_DAYS) || 10)));
+  const days = Math.max(1, Math.min(30, Math.round(Number(readConfig_().SEASON_DAYS) || 20)));
   let startedMs = new Date(props.getProperty('SEASON_STARTED')).getTime();
   if (!isFinite(startedMs)) {
     startedMs = Date.now();

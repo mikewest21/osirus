@@ -2905,7 +2905,7 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
         .withFailureHandler(function (e) { fail(e); $("runBtn").disabled = false; }).webRunRound();
     });
     $("autoBtn").addEventListener("click", function () {
-      $("autoBtn").disabled = true; $("notice").textContent = "Enabling 15-minute rounds, daily study hall and the 10-day season clock…";
+      $("autoBtn").disabled = true; $("notice").textContent = "Enabling 15-minute rounds, daily study hall and the season clock…";
       google.script.run.withSuccessHandler(function (j) { load(j); $("notice").textContent = "Automation enabled. The game now runs without this page being open."; })
         .withFailureHandler(function (e) { fail(e); $("autoBtn").disabled = false; }).webEnableAutomation();
     });
