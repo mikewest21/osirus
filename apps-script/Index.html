@@ -1334,7 +1334,8 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
         return '<ellipse cx="' + x + '" cy="' + cy + '" rx="5.8" ry="' + ry + '" style="fill:' + K + ';stroke:none"/>' +
           '<ellipse cx="' + x + '" cy="' + (cy + ry * .28) + '" rx="3.9" ry="' + (ry * .55).toFixed(2) + '" style="fill:var(--a,#5b8def);fill-opacity:.9;stroke:none"/>' +
           '<circle cx="' + (x + 1.9) + '" cy="' + (cy - ry * .42).toFixed(2) + '" r="2.5" style="fill:#fff;stroke:none"/>' +
-          '<circle cx="' + (x - 2) + '" cy="' + (cy + ry * .45).toFixed(2) + '" r="1.1" style="fill:#fff;stroke:none"/>';
+          '<circle cx="' + (x - 2) + '" cy="' + (cy + ry * .45).toFixed(2) + '" r="1.1" style="fill:#fff;stroke:none"/>' +
+          ln('M' + (x - 7) + ' ' + (cy - ry * .45).toFixed(2) + ' Q' + x + ' ' + (cy - ry - 2.6).toFixed(2) + ' ' + (x + 7) + ' ' + (cy - ry * .45).toFixed(2), 2.6);
       }).join("") + '</g>';
     }
     if (m === "struggling") out += ln('M' + (L - 7) + ' ' + (cy - 9) + ' L' + (L + 5) + ' ' + (cy - 13) + ' M' + (R + 7) + ' ' + (cy - 9) + ' L' + (R - 5) + ' ' + (cy - 13), 2.4);
@@ -1343,7 +1344,7 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
       else if (m === "struggling") out += ln('M' + (cx - 8) + ' ' + (y + 2) + ' Q' + (cx - 4) + ' ' + (y - 3) + ' ' + cx + ' ' + (y + 2) + ' Q' + (cx + 4) + ' ' + (y + 6) + ' ' + (cx + 8) + ' ' + (y + 1));
       else if (m === "asleep") out += '<ellipse cx="' + cx + '" cy="' + (y + 2) + '" rx="2.6" ry="3.2" style="fill:#7a1f2b;stroke-width:2"/>';
       else if (m === "tired") out += '<ellipse class="yawn" cx="' + cx + '" cy="' + (y + 2) + '" rx="3.4" ry="4.4" style="fill:#7a1f2b;stroke-width:2"/>';
-      else out += ln('M' + (cx - 6) + ' ' + y + ' Q' + cx + ' ' + (y + 6) + ' ' + (cx + 6) + ' ' + y);
+      else out += ln('M' + (cx - 6.5) + ' ' + (y - 1) + ' Q' + (cx - 3.2) + ' ' + (y + 4.5) + ' ' + cx + ' ' + (y + .5) + ' Q' + (cx + 3.2) + ' ' + (y + 4.5) + ' ' + (cx + 6.5) + ' ' + (y - 1), 2.4);
     }
     return out;
   }
@@ -1364,8 +1365,9 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
   // A chibi kid: o = { m, skin, top, sleeve, bottom, leg, shoe, skirt, back, hairBack, noHead, noEars, hair, headFront, torso, hold, face }
   function kid(o) {
     var leg = o.leg || o.bottom;
-    var legs = '<g class="legL">' + limb('M70 124 L69 141', leg, 9) + '<path d="M57 148 Q57 137 69 138 Q80 139 79 148 Z"' + f(o.shoe) + '/></g>' +
-      '<g class="legR">' + limb('M90 124 L91 141', leg, 9) + '<path d="M103 148 Q103 137 91 138 Q80 139 81 148 Z"' + f(o.shoe) + '/></g>';
+    var shine = function (x) { return '<ellipse cx="' + x + '" cy="141.5" rx="3.2" ry="1.6" style="fill:#fff;fill-opacity:.45;stroke:none"/>'; };
+    var legs = '<g class="legL">' + limb('M70 124 L69 141', leg, 9) + '<path d="M57 148 Q57 137 69 138 Q80 139 79 148 Z"' + f(o.shoe) + '/>' + shine(64) + '</g>' +
+      '<g class="legR">' + limb('M90 124 L91 141', leg, 9) + '<path d="M103 148 Q103 137 91 138 Q80 139 81 148 Z"' + f(o.shoe) + '/>' + shine(96) + '</g>';
     var torso = '<path d="M57 128 Q55 100 66 91 L94 91 Q105 100 103 128 Z"' + f(o.top) + '/>' +
       (o.skirt ? '<path d="M56 116 L104 116 L111 134 L49 134 Z"' + f(o.bottom) + '/>' : '<path d="M57 119 L103 119 L103 128 Q80 133 57 128 Z"' + f(o.bottom) + '/>') + (o.torso || "") + (o.p ? crestMark(o.p.house, o.badge || [80, 107, .26]) : "");
     var sl = o.sleeve || o.top;
@@ -1373,7 +1375,9 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
       '<g class="armR">' + limb('M96 99 Q108 107 111 118', sl, 8) + (o.hold || "") + '<circle cx="112" cy="121" r="6.5"' + f(o.skin) + '/></g>';
     var head = '<g class="head">' + (o.hairBack || "") +
       (o.noEars ? "" : '<circle cx="45" cy="66" r="7"' + f(o.skin) + '/><circle cx="115" cy="66" r="7"' + f(o.skin) + '/>') +
+      '<ellipse cx="80" cy="' + (o.noHead ? 93 : 95) + '" rx="17" ry="4.5" style="fill:#000;fill-opacity:.22;stroke:none"/>' +
       (o.noHead ? '<ellipse cx="80" cy="64" rx="30" ry="27"' + f(o.skin) + '/>' : '<ellipse cx="80" cy="60" rx="36" ry="33"' + f(o.skin) + '/>') +
+      '<ellipse cx="' + (o.noHead ? 66 : 62) + '" cy="' + (o.noHead ? 50 : 44) + '" rx="9" ry="5" transform="rotate(-25 ' + (o.noHead ? 66 : 62) + ' ' + (o.noHead ? 50 : 44) + ')" style="fill:#fff;fill-opacity:.32;stroke:none"/>' +
       (o.hair || "") + face(80, 64, o.m, o.face) + (o.headFront || "") + (o.m === "asleep" ? NIGHTCAP : "") + '</g>';
     return '<g transform="' + CHIBI_BODY + '">' + (o.back || "") + legs + torso + arms + '</g><g transform="' + CHIBI_HEAD + '">' + head + '</g>';
   }
