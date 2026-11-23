@@ -1299,7 +1299,13 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
   }
 
   /* ---------- class portraits ---------- */
-  // Chibi sticker style: big head, small body, bright flat colour, thick outline, white sticker border.
+  // Chibi sticker style (v2, Nov 2026): an oversized head (~60% of the height) on a small stubby body, big sparkly
+  // eyes with an iris in the character's own colour, rosy cheeks, bright flat colour, thick outline, white border.
+  // kid() draws every character at the original proportions, then scales the head up and the body down in wrapper
+  // groups, so outfits, hair, props and the CSS animations (which pivot .head/.armL/... in local coordinates) all
+  // carry over untouched.
+  var CHIBI_HEAD = 'translate(0 10) translate(80 93) scale(1.15) translate(-80 -93)';
+  var CHIBI_BODY = 'translate(80 148) scale(.78) translate(-80 -148)';
   var K = "#231f35";
   function f(c, x) { return ' style="fill:' + c + (x ? ';' + x : '') + '"'; }
   function limb(d, c, w) {
@@ -1310,7 +1316,10 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
   function face(cx, cy, m, o) {
     o = o || {};
     var dx = o.dx || 13, L = cx - dx, R = cx + dx, y = cy + (o.my == null ? 14 : o.my), out = "";
-    if (!o.noBlush) out += '<ellipse cx="' + (cx - 22) + '" cy="' + (cy + 9) + '" rx="5.5" ry="3.2" style="fill:#ff8fa3;fill-opacity:.6;stroke:none"/><ellipse cx="' + (cx + 22) + '" cy="' + (cy + 9) + '" rx="5.5" ry="3.2" style="fill:#ff8fa3;fill-opacity:.6;stroke:none"/>';
+    if (!o.noBlush) out += [cx - 23, cx + 23].map(function (x) {
+      return '<ellipse cx="' + x + '" cy="' + (cy + 10) + '" rx="7.5" ry="4" style="fill:#ff8fa3;fill-opacity:.55;stroke:none"/>' +
+        ln('M' + (x - 3) + ' ' + (cy + 8) + ' l-1.6 3 M' + (x + 1) + ' ' + (cy + 8) + ' l-1.6 3', 1.1, "#ff6f8a");
+    }).join("");
     if (m === "thriving") out += ln('M' + (L - 6) + ' ' + (cy + 2) + ' Q' + L + ' ' + (cy - 7) + ' ' + (L + 6) + ' ' + (cy + 2) + ' M' + (R - 6) + ' ' + (cy + 2) + ' Q' + R + ' ' + (cy - 7) + ' ' + (R + 6) + ' ' + (cy + 2), 3.2);
     else if (m === "asleep") out += ln('M' + (L - 6) + ' ' + cy + ' Q' + L + ' ' + (cy + 5) + ' ' + (L + 6) + ' ' + cy + ' M' + (R - 6) + ' ' + cy + ' Q' + R + ' ' + (cy + 5) + ' ' + (R + 6) + ' ' + cy, 3.2);
     else if (m === "tired") {
@@ -1320,9 +1329,12 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
         ln('M' + (L - 5) + ' ' + (cy + 6) + ' Q' + L + ' ' + (cy + 8.5) + ' ' + (L + 5) + ' ' + (cy + 6) + ' M' + (R - 5) + ' ' + (cy + 6) + ' Q' + R + ' ' + (cy + 8.5) + ' ' + (R + 5) + ' ' + (cy + 6), 1.2, "#8a7fa8");
     }
     else {
-      var ry = m === "struggling" ? 4.4 : 6;
+      var ry = m === "struggling" ? 5.6 : 7.8;   // big chibi eyes: dark outline, an iris in the character's colour, two sparkles
       out += '<g class="eyes">' + [L, R].map(function (x) {
-        return '<ellipse cx="' + x + '" cy="' + cy + '" rx="4.4" ry="' + ry + '" style="fill:' + K + ';stroke:none"/><circle cx="' + (x + 1.5) + '" cy="' + (cy - 2.2) + '" r="1.8" style="fill:#fff;stroke:none"/>';
+        return '<ellipse cx="' + x + '" cy="' + cy + '" rx="5.8" ry="' + ry + '" style="fill:' + K + ';stroke:none"/>' +
+          '<ellipse cx="' + x + '" cy="' + (cy + ry * .28) + '" rx="3.9" ry="' + (ry * .55).toFixed(2) + '" style="fill:var(--a,#5b8def);fill-opacity:.9;stroke:none"/>' +
+          '<circle cx="' + (x + 1.9) + '" cy="' + (cy - ry * .42).toFixed(2) + '" r="2.5" style="fill:#fff;stroke:none"/>' +
+          '<circle cx="' + (x - 2) + '" cy="' + (cy + ry * .45).toFixed(2) + '" r="1.1" style="fill:#fff;stroke:none"/>';
       }).join("") + '</g>';
     }
     if (m === "struggling") out += ln('M' + (L - 7) + ' ' + (cy - 9) + ' L' + (L + 5) + ' ' + (cy - 13) + ' M' + (R + 7) + ' ' + (cy - 9) + ' L' + (R - 5) + ' ' + (cy - 13), 2.4);
@@ -1363,7 +1375,7 @@ nav.tabs .more-toggle:hover { background: none; color: #fff; }
       (o.noEars ? "" : '<circle cx="45" cy="66" r="7"' + f(o.skin) + '/><circle cx="115" cy="66" r="7"' + f(o.skin) + '/>') +
       (o.noHead ? '<ellipse cx="80" cy="64" rx="30" ry="27"' + f(o.skin) + '/>' : '<ellipse cx="80" cy="60" rx="36" ry="33"' + f(o.skin) + '/>') +
       (o.hair || "") + face(80, 64, o.m, o.face) + (o.headFront || "") + (o.m === "asleep" ? NIGHTCAP : "") + '</g>';
-    return (o.back || "") + legs + torso + arms + head;
+    return '<g transform="' + CHIBI_BODY + '">' + (o.back || "") + legs + torso + arms + '</g><g transform="' + CHIBI_HEAD + '">' + head + '</g>';
   }
 
   var FX = '<g class="fx sparkle"><path class="a" d="M22 38 l3 -8 l3 8 l8 3 l-8 3 l-3 8 l-3 -8 l-8 -3z"/><path class="a" d="M136 34 l2 -6 l2 6 l6 2 l-6 2 l-2 6 l-2 -6 l-6 -2z"/><path class="a" d="M20 112 l2 -5 l2 5 l5 2 l-5 2 l-2 5 l-2 -5 l-5 -2z"/></g>' +
